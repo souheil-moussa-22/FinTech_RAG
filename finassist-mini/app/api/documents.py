@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from dataclasses import asdict
 import hashlib
 import logging
 from pathlib import Path
@@ -93,8 +94,9 @@ async def upload_document(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Only PDF files are accepted.")
 
     semaphore = request.app.state.upload_semaphore
+    wait_seconds = request.app.state.settings.admission_wait_seconds
     try:
-        await asyncio.wait_for(semaphore.acquire(), timeout=0.05)
+        await asyncio.wait_for(semaphore.acquire(), timeout=wait_seconds)
     except TimeoutError as exc:
         raise HTTPException(status_code=429, detail="Upload service is busy. Please retry shortly.") from exc
 
@@ -176,7 +178,7 @@ def get_ingestion_job_status(job_id: str, request: Request) -> IngestionJobStatu
     job = request.app.state.ingestion_job_service.get_job(job_id)
     if not job:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Ingestion job not found.")
-    return IngestionJobStatusResponse(**job)
+    return IngestionJobStatusResponse(**asdict(job))
 
 
 @router.get("", response_model=list[DocumentInfo])

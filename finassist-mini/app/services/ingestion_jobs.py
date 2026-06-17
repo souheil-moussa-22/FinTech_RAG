@@ -64,9 +64,9 @@ class IngestionJobService:
             job.detail = detail
             job.updated_at = time()
 
-    def get_job(self, job_id: str) -> dict[str, str | int | float | None] | None:
+    def get_job(self, job_id: str) -> IngestionJob | None:
         with self._lock:
             job = self._jobs.get(job_id)
             if not job:
                 return None
-            return asdict(job)
+            return IngestionJob(**asdict(job))

@@ -14,8 +14,9 @@ router = APIRouter(prefix="/chat", tags=["chat"])
 async def chat(request: Request, payload: ChatRequest) -> ChatResponse:
     """Answer one question via the RAG pipeline and return answer with citations."""
     semaphore = request.app.state.chat_semaphore
+    wait_seconds = request.app.state.settings.admission_wait_seconds
     try:
-        await asyncio.wait_for(semaphore.acquire(), timeout=0.05)
+        await asyncio.wait_for(semaphore.acquire(), timeout=wait_seconds)
     except TimeoutError as exc:
         raise HTTPException(status_code=429, detail="Chat service is busy. Please retry shortly.") from exc
 

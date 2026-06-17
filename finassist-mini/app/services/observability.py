@@ -5,6 +5,7 @@ from __future__ import annotations
 from contextlib import contextmanager
 from time import perf_counter
 import tracemalloc
+from typing import Generator
 
 
 def start_memory_tracing() -> None:
@@ -22,7 +23,7 @@ def current_memory_mb() -> float:
 
 
 @contextmanager
-def timed_stage() -> float:
+def timed_stage() -> Generator[list[float], None, None]:
     """Measure execution duration for one stage."""
     start = perf_counter()
     holder = [0.0]

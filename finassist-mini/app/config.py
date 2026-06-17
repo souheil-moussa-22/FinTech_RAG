@@ -35,6 +35,7 @@ class Settings(BaseModel):
     upload_write_chunk_bytes: int = Field(default=int(os.getenv("UPLOAD_WRITE_CHUNK_BYTES", str(1024 * 1024))), ge=1024)
     upload_max_concurrency: int = Field(default=int(os.getenv("UPLOAD_MAX_CONCURRENCY", "1")), ge=1)
     chat_max_concurrency: int = Field(default=int(os.getenv("CHAT_MAX_CONCURRENCY", "1")), ge=1)
+    admission_wait_seconds: float = Field(default=float(os.getenv("ADMISSION_WAIT_SECONDS", "1.0")), ge=0.05)
 
 
 settings = Settings()
