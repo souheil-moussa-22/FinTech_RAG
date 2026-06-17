@@ -103,6 +103,7 @@ The LLM prompt includes only retrieved chunks and explicit instruction to answer
 
 ### Documents
 - `POST /documents/upload` (PDF only)
+- `GET /documents/jobs/{job_id}` (poll ingestion status)
 - `GET /documents`
 - `DELETE /documents/{id}`
 
@@ -186,10 +187,20 @@ API returns answer + sources (doc/page)
    ```
 5. Start API:
    ```bash
-   uvicorn app.main:app --reload
+   uvicorn app.main:app --reload --workers 1
    ```
 
 Open Swagger at: `http://127.0.0.1:8000/docs`
+
+### Stability-first runtime profile
+
+The default `.env` profile is tuned for lower-risk local execution:
+- embeddings pinned to CPU
+- smaller LLM (`phi3:mini`)
+- conservative retrieval/chunk overlap
+- strict upload size and concurrency limits
+
+Upload ingestion now runs in a background task. `POST /documents/upload` returns a job id with `processing` status; poll `GET /documents/jobs/{job_id}` until completion.
 
 ---
 

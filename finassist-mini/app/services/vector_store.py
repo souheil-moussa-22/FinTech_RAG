@@ -1,6 +1,7 @@
 """ChromaDB wrapper service for persistent vector indexing and search."""
 
 from pathlib import Path
+from threading import Lock
 
 from app.models.document import DocumentChunk, RetrievedChunk
 
@@ -12,17 +13,20 @@ class VectorStoreService:
         self.persist_directory = persist_directory
         self.collection_name = collection_name
         self._collection = None
+        self._lock = Lock()
 
     def _get_collection(self):
         """Create or reuse a persistent Chroma collection."""
         if self._collection is None:
-            try:
-                import chromadb
-            except ImportError as exc:
-                raise RuntimeError("chromadb is not installed. Install requirements.txt dependencies.") from exc
+            with self._lock:
+                if self._collection is None:
+                    try:
+                        import chromadb
+                    except ImportError as exc:
+                        raise RuntimeError("chromadb is not installed. Install requirements.txt dependencies.") from exc
 
-            client = chromadb.PersistentClient(path=str(self.persist_directory))
-            self._collection = client.get_or_create_collection(name=self.collection_name)
+                    client = chromadb.PersistentClient(path=str(self.persist_directory))
+                    self._collection = client.get_or_create_collection(name=self.collection_name)
         return self._collection
 
     def upsert_chunks(self, chunks: list[DocumentChunk], embeddings: list[list[float]]) -> None:
@@ -38,12 +42,19 @@ class VectorStoreService:
             metadatas=[
                 {
                     "document_id": chunk.document_id,
+                    "document_hash": chunk.document_id,
                     "document_name": chunk.document_name,
                     "page_number": chunk.page_number,
                 }
                 for chunk in chunks
             ],
         )
+
+    def document_exists(self, document_hash: str) -> bool:
+        """Return whether a document hash is already indexed in collection metadata."""
+        results = self._get_collection().get(where={"document_hash": document_hash}, limit=1)
+        ids = results.get("ids", [])
+        return bool(ids)
 
     def search(self, query_embedding: list[float], top_k: int) -> list[RetrievedChunk]:
         """Perform top-k semantic retrieval using cosine-distance-like ranking."""
