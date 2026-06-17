@@ -75,6 +75,39 @@ class RAGServiceTests(unittest.TestCase):
         self.assertEqual(sources, [{"document": "fees.pdf", "page": 2}])
         self.assertIn("Transfer fee is 5 USD.", llm.last_prompt)
 
+    def test_rag_caps_context_by_max_prompt_chars(self):
+        chunks = [
+            RetrievedChunk(
+                chunk_id="1",
+                document_id="doc-a",
+                document_name="fees.pdf",
+                page_number=1,
+                text="A" * 100,
+                distance=0.1,
+            ),
+            RetrievedChunk(
+                chunk_id="2",
+                document_id="doc-a",
+                document_name="fees.pdf",
+                page_number=2,
+                text="B" * 100,
+                distance=0.2,
+            ),
+        ]
+        llm = FakeLLMService()
+        service = RAGService(
+            embedding_service=FakeEmbeddingService(),
+            vector_store_service=FakeVectorStoreService(chunks),
+            llm_service=llm,
+            top_k=4,
+            max_prompt_chars=140,
+        )
+
+        service.answer_question("Q?")
+
+        self.assertIn("A" * 100, llm.last_prompt)
+        self.assertNotIn("B" * 100, llm.last_prompt)
+
 
 if __name__ == "__main__":
     unittest.main()
