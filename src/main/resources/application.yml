@@ -1,0 +1,138 @@
+server:
+  port: ${SERVER_PORT:8080}
+
+spring:
+  application:
+    name: ${APP_NAME:finassist-mini}
+
+  datasource:
+    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/fintech_rag}
+    username: ${SPRING_DATASOURCE_USERNAME:postgres}
+    password: ${SPRING_DATASOURCE_PASSWORD:postgres}
+    driver-class-name: org.postgresql.Driver
+
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+        jdbc:
+          batch_size: 20
+        order_inserts: true
+        order_updates: true
+
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          issuer-uri: http://localhost:8180/realms/finassist
+
+  ai:
+    ollama:
+      base-url: ${OLLAMA_URL:http://localhost:11434}
+      embedding:
+        model: ${EMBEDDING_MODEL:nomic-embed-text}
+      chat:
+        model: ${LLM_MODEL:tinyllama}
+        options:
+          num-predict: 512
+
+  vectorstore:
+    pgvector:
+      index-type: HNSW
+      distance-type: COSINE_DISTANCE
+      similarity-threshold: 0.5
+      dimensions: 768
+      initialize-schema: true
+
+  servlet:
+    multipart:
+      enabled: true
+      max-file-size: ${MAX_UPLOAD_SIZE_MB:25}MB
+      max-request-size: ${MAX_UPLOAD_SIZE_MB:25}MB
+
+  jackson:
+    serialization:
+      write-dates-as-timestamps: false
+
+app:
+  docs-directory: ${DOCS_DIRECTORY:data/documents}
+  retrieval-k: ${RETRIEVAL_K:3}
+  chunk-size-words: ${CHUNK_SIZE_WORDS:350}
+  chunk-overlap-words: ${CHUNK_OVERLAP_WORDS:35}
+  max-prompt-chars: ${MAX_PROMPT_CHARS:6000}
+  upload-write-chunk-bytes: ${UPLOAD_WRITE_CHUNK_BYTES:1048576}
+  upload-max-concurrency: ${UPLOAD_MAX_CONCURRENCY:1}
+  chat-max-concurrency: ${CHAT_MAX_CONCURRENCY:1}
+  admission-wait-seconds: ${ADMISSION_WAIT_SECONDS:1.0}
+
+keycloak:
+  admin:
+    server-url: ${KEYCLOAK_SERVER_URL:http://localhost:8180}
+    realm: ${KEYCLOAK_REALM:finassist}
+    client-id: ${KEYCLOAK_ADMIN_CLIENT_ID:finassist-admin}
+    client-secret: ${KEYCLOAK_ADMIN_CLIENT_SECRET:5ra1xDe32xlCltOTwIdnUVaqoeK1dpmP}
+
+springdoc:
+  api-docs:
+    path: /v3/api-docs
+  swagger-ui:
+    path: /swagger-ui.html
+    tags-sorter: alpha
+    operations-sorter: alpha
+    display-request-duration: true
+
+logging:
+  level:
+    org.springframework.ai: INFO
+    com.finassistmini: DEBUG
+
+repository:
+  storage-path: storage/repositories
+  max-file-size-bytes: 1048576       # 1 MB
+  max-files-per-repo: 2000
+  max-depth: 20
+  clone-timeout-seconds: 120
+  summary-enabled: true
+  async-enabled: true
+  allowed-extensions:
+    - java
+    - kt
+    - py
+    - js
+    - ts
+    - go
+    - rs
+    - c
+    - cpp
+    - cs
+    - yaml
+    - yml
+    - json
+    - xml
+    - md
+    - properties
+    - sql
+    - gradle
+    - kts
+    - dockerfile
+    - txt
+  ignored-directories:
+    - .git
+    - node_modules
+    - target
+    - build
+    - dist
+    - coverage
+    - .idea
+    - .vscode
+    - bin
+    - obj
+    - vendor
+    - logs
+    - tmp
+    - generated
+    - __pycache__
+    - .gradle
+    - .mvn
