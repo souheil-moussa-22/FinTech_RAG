@@ -2,7 +2,9 @@ package com.finassistmini.service;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.finassistmini.model.GitRepository;
+import com.finassistmini.model.RepositoryFile;
 import com.finassistmini.repository.GitRepositoryRepository;
+import com.finassistmini.repository.RepositoryFileRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.ai.chat.model.ChatModel;
@@ -15,12 +17,16 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
+import java.util.TreeMap;
+import java.util.stream.Collectors;
 
 @Service
 public class RepositorySummaryService {
 
     private static final Logger log = LoggerFactory.getLogger(RepositorySummaryService.class);
     private static final int MAX_CONTEXT_CHARS = 8_000;
+    private static final int MAX_TREE_CONTEXT_CHARS = 3_000;
     private static final List<String> PRIORITY_FILES = List.of(
             "README.md", "README.rst", "README.txt", "readme.md",
             "pom.xml", "build.gradle", "build.gradle.kts", "package.json",
@@ -30,11 +36,14 @@ public class RepositorySummaryService {
 
     private final ChatModel                chatModel;
     private final GitRepositoryRepository  repositoryRepo;
+    private final RepositoryFileRepository repositoryFileRepo;
 
     public RepositorySummaryService(ChatModel chatModel,
-                                    GitRepositoryRepository repositoryRepo ) {
+                                    GitRepositoryRepository repositoryRepo,
+                                    RepositoryFileRepository repositoryFileRepo ) {
         this.chatModel      = chatModel;
         this.repositoryRepo = repositoryRepo;
+        this.repositoryFileRepo = repositoryFileRepo;
     }
 
     public String getSummary(GitRepository repository) {
@@ -71,6 +80,12 @@ public class RepositorySummaryService {
     private String buildSummaryContext(GitRepository repository) {
         Path repoRoot = Paths.get(repository.getLocalPath());
         StringBuilder context = new StringBuilder();
+        List<RepositoryFile> files = repositoryFileRepo.findByRepositoryId(repository.getId());
+
+        appendRepositoryMetadataContext(context, files);
+        context.append("\nRepository file tree (from indexed metadata):\n")
+                .append(getRepositoryFileTree(repository.getId()))
+                .append("\n\n");
 
         for (String fileName : PRIORITY_FILES) {
             Path candidate = repoRoot.resolve(fileName);
@@ -96,6 +111,62 @@ public class RepositorySummaryService {
         }
 
         return context.toString();
+    }
+
+    public String getRepositoryFileTree(Long repositoryId) {
+        List<RepositoryFile> files = repositoryFileRepo.findByRepositoryId(repositoryId);
+        if (files.isEmpty()) return "(no indexed file metadata available)";
+
+        Map<String, RepositoryFile> byPath = files.stream()
+                .filter(f -> f.getPath() != null && !f.getPath().isBlank())
+                .sorted((a, b) -> a.getPath().compareToIgnoreCase(b.getPath()))
+                .collect(Collectors.toMap(
+                        RepositoryFile::getPath,
+                        f -> f,
+                        (left, right) -> left,
+                        TreeMap::new
+                ));
+
+        StringBuilder tree = new StringBuilder();
+        TreeNode root = new TreeNode("");
+        for (String path : byPath.keySet()) {
+            root.insert(path);
+        }
+        root.render(tree, 0);
+
+        String result = tree.toString().trim();
+        if (result.length() > MAX_TREE_CONTEXT_CHARS) {
+            return result.substring(0, MAX_TREE_CONTEXT_CHARS) + "\n... (truncated)";
+        }
+        return result;
+    }
+
+    private void appendRepositoryMetadataContext(StringBuilder context, List<RepositoryFile> files) {
+        if (files.isEmpty()) {
+            context.append("Indexed repository metadata: none available.\n\n");
+            return;
+        }
+
+        Map<String, Long> languageCounts = files.stream()
+                .filter(f -> f.isIndexed() && f.getLanguage() != null && !f.getLanguage().isBlank())
+                .collect(Collectors.groupingBy(RepositoryFile::getLanguage, TreeMap::new, Collectors.counting()));
+
+        Map<String, Long> extensionCounts = files.stream()
+                .map(RepositoryFile::getExtension)
+                .filter(ext -> ext != null && !ext.isBlank())
+                .collect(Collectors.groupingBy(ext -> ext.toLowerCase(), TreeMap::new, Collectors.counting()));
+
+        long indexedCount = files.stream().filter(RepositoryFile::isIndexed).count();
+        long skippedCount = files.stream().filter(RepositoryFile::isSkipped).count();
+        long totalChunks = files.stream().map(RepositoryFile::getChunkCount).filter(c -> c != null).mapToLong(Integer::longValue).sum();
+
+        context.append("Indexed repository metadata:\n")
+                .append("- Total discovered files: ").append(files.size()).append('\n')
+                .append("- Indexed files: ").append(indexedCount).append('\n')
+                .append("- Skipped files: ").append(skippedCount).append('\n')
+                .append("- Total chunks: ").append(totalChunks).append('\n')
+                .append("- Languages (indexed): ").append(languageCounts.isEmpty() ? "unknown" : languageCounts).append('\n')
+                .append("- Extensions: ").append(extensionCounts.isEmpty() ? "unknown" : extensionCounts).append("\n\n");
     }
 
     private String sampleSourceFiles(Path repoRoot) {
@@ -128,7 +199,7 @@ public class RepositorySummaryService {
 
     private String buildSummaryPrompt(String name, String url, String context) {
         return """
-                You are a senior software architect. Analyze this Git repository and produce a comprehensive technical summary.
+                You are a senior software architect. Analyze this Git repository and produce a concise technical overview.
 
                 Repository: %s
                 URL: %s
@@ -136,7 +207,7 @@ public class RepositorySummaryService {
                 Available files and content:
                 %s
 
-                Generate a structured summary covering:
+                Generate a structured overview covering:
                 1. Project purpose and problem it solves
                 2. Architecture and design patterns used
                 3. Main technologies and frameworks
@@ -148,9 +219,37 @@ public class RepositorySummaryService {
                 9. Key classes and their responsibilities
                 10. Notable design decisions and observations
                 11. External dependencies
-                12. Folder structure overview
+                12. Folder structure understanding based on metadata
 
+                Focus on technical overview only. The file tree is returned separately.
                 Be precise, technical, and concise. Use bullet points where appropriate.
                 """.formatted(name, url, context);
+    }
+
+    private static class TreeNode {
+        private final String name;
+        private final Map<String, TreeNode> children = new TreeMap<>(String.CASE_INSENSITIVE_ORDER);
+
+        private TreeNode(String name) {
+            this.name = name;
+        }
+
+        private void insert(String path) {
+            String[] parts = path.split("/");
+            TreeNode current = this;
+            for (String part : parts) {
+                if (part.isBlank()) continue;
+                current = current.children.computeIfAbsent(part, TreeNode::new);
+            }
+        }
+
+        private void render(StringBuilder sb, int depth) {
+            if (!name.isBlank()) {
+                sb.append("  ".repeat(Math.max(0, depth - 1))).append("- ").append(name).append('\n');
+            }
+            for (TreeNode child : children.values()) {
+                child.render(sb, depth + (name.isBlank() ? 0 : 1));
+            }
+        }
     }
 }
