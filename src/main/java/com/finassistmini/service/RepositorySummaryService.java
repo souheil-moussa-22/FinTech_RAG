@@ -208,12 +208,13 @@ public class RepositorySummaryService {
                 Available files and content:
                 %s
 
-                Return markdown with exactly one section:
-                Overview:
+                Return only this XML block and nothing else:
+                <overview>
                 - 3 to 6 concise technical bullet points about what this repository does.
+                </overview>
 
                 Do not include any other sections or headings.
-                Do not include project purpose, main technologies, module/package structure, or file tree.
+                Do not include metrics, file counts, language/extension stats, file paths, or file tree lines.
                 The file tree is returned separately.
                 """.formatted(name, url, context);
     }
@@ -223,65 +224,94 @@ public class RepositorySummaryService {
         String normalized = rawSummary.replace("\r\n", "\n").trim();
         if (normalized.isBlank()) return normalized;
 
-        String[] stopHeadings = {
-                "project purpose and problem solving",
-                "main technologies and frameworks",
-                "module and package structure",
-                "architecture and design patterns",
-                "build tool and configuration",
-                "authentication and security approach",
-                "database and persistence strategy",
-                "public api and entry points",
-                "key classes and their responsibilities",
-                "notable design decisions and observations",
-                "external dependencies",
-                "folder structure understanding based on metadata"
-        };
+        int openTag = normalized.toLowerCase().indexOf("<overview>");
+        int closeTag = normalized.toLowerCase().indexOf("</overview>");
+        if (openTag >= 0 && closeTag > openTag) {
+            normalized = normalized.substring(openTag + "<overview>".length(), closeTag).trim();
+        }
 
         String[] lines = normalized.split("\n");
-        StringBuilder overview = new StringBuilder();
-        boolean collecting = false;
+        List<String> bullets = new ArrayList<>();
+        boolean insideOverviewBlock = openTag >= 0 && closeTag > openTag;
+        boolean seenOverviewHeading = false;
 
         for (String line : lines) {
             String trimmed = line.trim();
-            String normalizedHeading = trimmed
-                    .replaceFirst("^#+\\s*", "")
-                    .replaceFirst("^\\d+\\.\\s*", "")
-                    .replaceAll(":\\s*$", "")
-                    .toLowerCase();
+            if (trimmed.isBlank()) continue;
 
-            boolean isOverviewHeading = normalizedHeading.equals("overview");
-            boolean isStopHeading = false;
-            for (String stop : stopHeadings) {
-                if (normalizedHeading.equals(stop)) {
-                    isStopHeading = true;
-                    break;
-                }
-            }
-
-            if (isOverviewHeading) {
-                if (overview.length() > 0) break;
-                collecting = true;
-                overview.append("Overview:\n");
+            String normalizedHeading = normalizeHeading(trimmed);
+            if (!insideOverviewBlock && normalizedHeading.equals("overview")) {
+                seenOverviewHeading = true;
                 continue;
             }
-
-            if (!collecting && overview.length() == 0 && !trimmed.isBlank()) {
-                collecting = true;
-                overview.append("Overview:\n");
-            }
-
-            if (collecting && isStopHeading) {
+            if (!insideOverviewBlock && seenOverviewHeading && isSectionHeading(normalizedHeading)) {
                 break;
             }
-
-            if (collecting) {
-                overview.append(line).append('\n');
+            if (!insideOverviewBlock && !seenOverviewHeading && isSectionHeading(normalizedHeading)) {
+                continue;
             }
+            if (shouldExcludeOverviewLine(trimmed)) continue;
+
+            String cleaned = trimmed
+                    .replaceFirst("^[-*]\\s*", "")
+                    .replaceFirst("^\\d+\\.\\s*", "")
+                    .trim();
+            if (cleaned.isBlank()) continue;
+
+            bullets.add("- " + cleaned);
+            if (bullets.size() >= 6) break;
         }
 
-        String result = overview.toString().trim();
-        return result.isBlank() ? "Overview:\n- Not available." : result;
+        if (bullets.isEmpty()) {
+            return "Overview:\n- Not available.";
+        }
+        return "Overview:\n" + String.join("\n", bullets);
+    }
+
+    private String normalizeHeading(String value) {
+        return value
+                .replaceFirst("^#+\\s*", "")
+                .replaceFirst("^\\d+\\.\\s*", "")
+                .replaceAll(":\\s*$", "")
+                .trim()
+                .toLowerCase();
+    }
+
+    private boolean isSectionHeading(String normalizedHeading) {
+        return normalizedHeading.equals("project purpose and problem solving")
+                || normalizedHeading.equals("main technologies and frameworks")
+                || normalizedHeading.equals("module and package structure")
+                || normalizedHeading.equals("architecture and design patterns")
+                || normalizedHeading.equals("build tool and configuration")
+                || normalizedHeading.equals("authentication and security approach")
+                || normalizedHeading.equals("database and persistence strategy")
+                || normalizedHeading.equals("public api and entry points")
+                || normalizedHeading.equals("key classes and their responsibilities")
+                || normalizedHeading.equals("notable design decisions and observations")
+                || normalizedHeading.equals("external dependencies")
+                || normalizedHeading.equals("folder structure understanding based on metadata");
+    }
+
+    private boolean shouldExcludeOverviewLine(String line) {
+        String lower = line.toLowerCase();
+        if (lower.contains("repository file tree")
+                || lower.equals("file tree")
+                || lower.startsWith("indexed files")
+                || lower.startsWith("total discovered files")
+                || lower.startsWith("languages indexed")
+                || lower.startsWith("extensions indexed")
+                || lower.startsWith("total chunks")
+                || lower.startsWith("skipped files")) {
+            return true;
+        }
+        return looksLikePathLine(line);
+    }
+
+    private boolean looksLikePathLine(String line) {
+        String trimmed = line.trim().replaceFirst("^[-*]\\s*", "");
+        if (!(trimmed.contains("/") || trimmed.contains("\\"))) return false;
+        return trimmed.matches(".*\\.(java|kt|kts|xml|yml|yaml|json|md|txt|properties|gradle|ts|tsx|js|jsx)$")
+                || trimmed.matches("^[\\w.-]+([/\\\\][\\w .-]+)+$");
     }
 
     private static class TreeNode {
