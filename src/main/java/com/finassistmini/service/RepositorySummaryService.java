@@ -49,7 +49,7 @@ public class RepositorySummaryService {
     public String getSummary(GitRepository repository) {
         if (repository.getSummary() != null && !repository.getSummary().isBlank()) {
             log.debug("Returning cached summary for repository {}", repository.getId());
-            return repository.getSummary();
+            return extractOverviewOnly(repository.getSummary());
         }
         return generateAndCache(repository);
     }
@@ -65,6 +65,7 @@ public class RepositorySummaryService {
                     .getResult()
                     .getOutput()
                     .getText();
+            summary = extractOverviewOnly(summary);
 
             repository.setSummary(summary);
             repositoryRepo.save(repository);
@@ -207,23 +208,80 @@ public class RepositorySummaryService {
                 Available files and content:
                 %s
 
-                Generate a structured overview covering:
-                1. Project purpose and problem it solves
-                2. Architecture and design patterns used
-                3. Main technologies and frameworks
-                4. Module and package structure
-                5. Build tool and configuration
-                6. Authentication and security approach (if any)
-                7. Database and persistence strategy (if any)
-                8. Public API and entry points
-                9. Key classes and their responsibilities
-                10. Notable design decisions and observations
-                11. External dependencies
-                12. Folder structure understanding based on metadata
+                Return markdown with exactly one section:
+                Overview:
+                - 3 to 6 concise technical bullet points about what this repository does.
 
-                Focus on technical overview only. The file tree is returned separately.
-                Be precise, technical, and concise. Use bullet points where appropriate.
+                Do not include any other sections or headings.
+                Do not include project purpose, main technologies, module/package structure, or file tree.
+                The file tree is returned separately.
                 """.formatted(name, url, context);
+    }
+
+    private String extractOverviewOnly(String rawSummary) {
+        if (rawSummary == null) return "";
+        String normalized = rawSummary.replace("\r\n", "\n").trim();
+        if (normalized.isBlank()) return normalized;
+
+        String[] stopHeadings = {
+                "project purpose and problem solving",
+                "main technologies and frameworks",
+                "module and package structure",
+                "architecture and design patterns",
+                "build tool and configuration",
+                "authentication and security approach",
+                "database and persistence strategy",
+                "public api and entry points",
+                "key classes and their responsibilities",
+                "notable design decisions and observations",
+                "external dependencies",
+                "folder structure understanding based on metadata"
+        };
+
+        String[] lines = normalized.split("\n");
+        StringBuilder overview = new StringBuilder();
+        boolean collecting = false;
+
+        for (String line : lines) {
+            String trimmed = line.trim();
+            String normalizedHeading = trimmed
+                    .replaceFirst("^#+\\s*", "")
+                    .replaceFirst("^\\d+\\.\\s*", "")
+                    .replaceAll(":\\s*$", "")
+                    .toLowerCase();
+
+            boolean isOverviewHeading = normalizedHeading.equals("overview");
+            boolean isStopHeading = false;
+            for (String stop : stopHeadings) {
+                if (normalizedHeading.equals(stop)) {
+                    isStopHeading = true;
+                    break;
+                }
+            }
+
+            if (isOverviewHeading) {
+                if (overview.length() > 0) break;
+                collecting = true;
+                overview.append("Overview:\n");
+                continue;
+            }
+
+            if (!collecting && overview.length() == 0 && !trimmed.isBlank()) {
+                collecting = true;
+                overview.append("Overview:\n");
+            }
+
+            if (collecting && isStopHeading) {
+                break;
+            }
+
+            if (collecting) {
+                overview.append(line).append('\n');
+            }
+        }
+
+        String result = overview.toString().trim();
+        return result.isBlank() ? "Overview:\n- Not available." : result;
     }
 
     private static class TreeNode {
