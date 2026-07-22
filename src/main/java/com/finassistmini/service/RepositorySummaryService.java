@@ -22,6 +22,8 @@ public class RepositorySummaryService {
 
     private static final Logger log = LoggerFactory.getLogger(RepositorySummaryService.class);
     private static final int MAX_CONTEXT_CHARS = 12_000;
+    private static final String OVERVIEW_HEADING = "## Overview";
+    private static final String STACK_HEADING = "## Stack";
 
     private final ChatModel chatModel;
     private final GitRepositoryRepository repositoryRepo;
@@ -39,11 +41,22 @@ public class RepositorySummaryService {
     }
 
     public String getSummary(GitRepository repository) {
-        if (repository.getSummary() != null && !repository.getSummary().isBlank()) {
+        if (hasUsableCachedSummary(repository)) {
             log.debug("Returning cached summary for repository {}", repository.getId());
             return repository.getSummary();
         }
+        if (repository.getSummary() != null && !repository.getSummary().isBlank()) {
+            log.info("Refreshing stale summary format for repository {}", repository.getId());
+        }
         return generateAndCache(repository);
+    }
+
+    public boolean hasUsableCachedSummary(GitRepository repository) {
+        if (repository == null) {
+            return false;
+        }
+        String summary = repository.getSummary();
+        return summary != null && !summary.isBlank() && isCurrentFormat(summary);
     }
 
     public String getRepositoryFileTree(Long repositoryId) {
@@ -85,10 +98,12 @@ public class RepositorySummaryService {
                     .getOutput()
                     .getText();
 
-            repository.setSummary(summary);
+            String normalizedSummary = summary == null ? "" : summary.strip();
+
+            repository.setSummary(normalizedSummary);
             repositoryRepo.save(repository);
             log.info("Summary generated and cached for repository {}", repository.getId());
-            return summary;
+            return normalizedSummary;
         } catch (Exception e) {
             log.error("Failed to generate summary for repository {}: {}", repository.getId(), e.getMessage());
             return "Summary generation failed: " + e.getMessage();
@@ -161,7 +176,7 @@ public class RepositorySummaryService {
     private String buildSummaryPrompt(String name, String url, String context) {
         return """
                 You are GitHub Copilot acting as a senior engineer.
-                Analyze the project context and produce a concise product-level and technical overview.
+                Analyze the project context and produce a high-level repository overview exactly like Copilot would.
 
                 Project name: %s
                 Project URL: %s
@@ -169,26 +184,31 @@ public class RepositorySummaryService {
                 Context:
                 %s
 
-                Your response must include exactly these sections:
+                Write the response in GitHub markdown using exactly this structure:
 
-                Overview
-                - Explain what application this is.
-                - Explain who it is built for.
-                - Explain what users can do.
-                - Explain what problem it solves.
+                ## Overview
+                - What this repository is.
+                - Who it is for.
+                - What users can do with it.
+                - What problem it solves.
 
-                Stack
-                - List languages.
-                - List frameworks/platforms.
-                - List databases and infrastructure.
-                - Mention important libraries only when clearly supported by the context.
+                ## Stack
+                - Languages.
+                - Frameworks/platforms.
+                - Data stores/infrastructure.
+                - Important libraries only when clearly supported by context.
 
                 Rules:
                 - Do not mention repository statistics or metadata.
                 - Do not mention indexing, chunking, embeddings, vector stores, or folder trees.
                 - Do not speculate when the context is missing; state uncertainty briefly.
-                - Keep the output concise and precise.
+                - Keep the output concise and precise (8-12 bullets total).
                 """.formatted(name, url, context);
+    }
+
+    private boolean isCurrentFormat(String summary) {
+        String value = summary == null ? "" : summary.toLowerCase();
+        return value.contains(OVERVIEW_HEADING.toLowerCase()) && value.contains(STACK_HEADING.toLowerCase());
     }
 
     private static class TreeNode {
