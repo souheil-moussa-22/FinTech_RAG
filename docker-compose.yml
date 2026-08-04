@@ -10,6 +10,13 @@ services:
       - "5432:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U postgres -d fintech_rag" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - finassist-net
 
   keycloak:
     image: quay.io/keycloak/keycloak:26.0
@@ -22,11 +29,186 @@ services:
       - "8180:8080"
     volumes:
       - ./keycloak:/opt/keycloak/data/import
+      - keycloak_data:/opt/keycloak/data
     healthcheck:
-      test: [ "CMD-SHELL", "curl -f http://localhost:8080/health/ready || exit 1" ]
+      test: [ "CMD-SHELL", "exec 3<>/dev/tcp/127.0.0.1/8080" ]
       interval: 20s
       timeout: 10s
       retries: 5
 
+  ollama:
+    image: ollama/ollama:latest
+    container_name: finassist-ollama
+    restart: unless-stopped
+    entrypoint: [ "/bin/sh", "/scripts/ollama-entrypoint.sh" ]
+    environment:
+      OLLAMA_CHAT_MODEL: ${OLLAMA_CHAT_MODEL:-gemma2:2b}
+      OLLAMA_KEEP_ALIVE: ${OLLAMA_KEEP_ALIVE:-5m}
+      OLLAMA_NUM_PARALLEL: ${OLLAMA_NUM_PARALLEL:-1}
+    volumes:
+      - ollama_data:/root/.ollama
+      - ./scripts/ollama-entrypoint.sh:/scripts/ollama-entrypoint.sh:ro
+    ports:
+      - "${OLLAMA_PORT:-11434}:11434"
+    healthcheck:
+      test: [ "CMD-SHELL", "ollama list || exit 1" ]
+      interval: 20s
+      timeout: 10s
+      retries: 15
+      start_period: 180s   # First boot: model downloads can take minutes
+    deploy:
+      resources:
+        limits:
+          cpus: '4.0'
+          memory: 8G
+        reservations:
+          memory: 4G
+    networks:
+      - finassist-net
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  backend:
+      build:
+        context: .
+        dockerfile: Dockerfile
+      image: finassist-backend:latest
+      container_name: finassist-backend
+      restart: unless-stopped
+      depends_on:
+        postgres:
+          condition: service_healthy
+        keycloak:
+          condition: service_healthy
+        ollama:
+          condition: service_healthy
+      environment:
+        SPRING_PROFILES_ACTIVE: prod
+
+        SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB:-fintech_rag}
+        SPRING_DATASOURCE_USERNAME: ${POSTGRES_USER:-postgres}
+        SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+        SPRING_DATASOURCE_HIKARI_MAXIMUM_POOL_SIZE: ${DB_POOL_SIZE:-10}
+        SPRING_JPA_HIBERNATE_DDL_AUTO: update
+        SPRING_JPA_SHOW_SQL: "false"
+
+        SPRING_AI_VECTORSTORE_PGVECTOR_INITIALIZE_SCHEMA: "true"
+        SPRING_AI_VECTORSTORE_PGVECTOR_DIMENSIONS: "768"
+        SPRING_AI_VECTORSTORE_PGVECTOR_INDEX_TYPE: HNSW
+
+        SPRING_AI_OLLAMA_BASE_URL: http://ollama:11434
+        SPRING_AI_OLLAMA_CHAT_OPTIONS_MODEL: ${OLLAMA_CHAT_MODEL:-gemma2:2b}
+        SPRING_AI_OLLAMA_EMBEDDING_OPTIONS_MODEL: nomic-embed-text
+
+        SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_ISSUER_URI: >-
+          http://keycloak:8180/realms/${KEYCLOAK_REALM:-finassist}
+
+        KEYCLOAK_ADMIN_SERVER_URL: http://keycloak:8180
+        KEYCLOAK_ADMIN_REALM: ${KEYCLOAK_REALM:-finassist}
+        KEYCLOAK_ADMIN_CLIENT_ID: ${KEYCLOAK_ADMIN_CLIENT_ID:-finassist-admin}
+        KEYCLOAK_ADMIN_CLIENT_SECRET: ${KEYCLOAK_ADMIN_CLIENT_SECRET:-change-me}
+
+        REPOSITORY_STORAGE_PATH: /app/storage/repositories
+
+        APP_JWT_SECRET: ${APP_JWT_SECRET:-change-me-minimum-32-chars-long}
+        APP_JWT_EXPIRATION_MS: ${APP_JWT_EXPIRATION_MS:-86400000}
+
+        CORS_ALLOWED_ORIGIN: ${CORS_ALLOWED_ORIGIN:-http://localhost:3000}
+
+        LOGGING_LEVEL_COM_FINASSISTMINI: ${LOG_LEVEL:-INFO}
+        LOGGING_LEVEL_ORG_SPRINGFRAMEWORK_SECURITY: ${SECURITY_LOG_LEVEL:-WARN}
+        LOGGING_LEVEL_ORG_SPRINGFRAMEWORK_AI: ${AI_LOG_LEVEL:-INFO}
+
+        MANAGEMENT_ENDPOINTS_WEB_EXPOSURE_INCLUDE: health,info,metrics
+        MANAGEMENT_ENDPOINT_HEALTH_SHOW_DETAILS: when-authorized
+
+      volumes:
+        - backend_storage:/app/storage
+      ports:
+        - "${BACKEND_PORT:-8080}:8080"
+      healthcheck:
+        test: [ "CMD-SHELL", "wget -qO- http://localhost:8080/actuator/health || exit 1" ]
+        interval: 30s
+        timeout: 10s
+        retries: 5
+        start_period: 120s
+      deploy:
+        resources:
+          limits:
+            cpus: '2.0'
+            memory: 1G
+          reservations:
+            memory: 512M
+      networks:
+        - finassist-net
+      logging:
+        driver: json-file
+        options:
+          max-size: "50m"
+          max-file: "5"
+
+  frontend:
+      build:
+        context: ./finassist-frontend
+        dockerfile: Dockerfile
+        args:
+          VITE_API_BASE_URL: /api
+          VITE_KEYCLOAK_URL: http://localhost:8180
+          VITE_KEYCLOAK_REALM: ${KEYCLOAK_REALM:-finassist}
+          VITE_KEYCLOAK_CLIENT: ${KEYCLOAK_CLIENT:-finassist-app}
+      image: finassist-frontend:latest
+      container_name: finassist-frontend
+      restart: unless-stopped
+      depends_on:
+        backend:
+          condition: service_healthy
+      ports:
+        - "${FRONTEND_PORT:-3000}:80"
+      healthcheck:
+        test: ["CMD-SHELL", "wget -qO- http://localhost:80/health || exit 1" ]
+        interval: 30s
+        timeout: 5s
+        retries: 3
+        start_period: 10s
+      deploy:
+        resources:
+          limits:
+            cpus: '0.5'
+            memory: 128M
+          reservations:
+            memory: 64M
+      networks:
+        - finassist-net
+      logging:
+        driver: json-file
+        options:
+          max-size: "10m"
+          max-file: "3"
+
 volumes:
-  pgdata:
+    pgdata:
+      name: finassist-postgres-data
+      driver: local
+
+    keycloak_data:
+      name: finassist-keycloak-data
+      driver: local
+
+    ollama_data:
+      name: finassist-ollama-data
+      driver: local
+
+    backend_storage:
+      name: finassist-backend-storage
+      driver: local
+
+networks:
+    finassist-net:
+      name: finassist-network
+      driver: bridge
+      ipam:
+        config:
+          - subnet: 172.28.0.0/16

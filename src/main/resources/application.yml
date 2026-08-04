@@ -34,7 +34,7 @@ spring:
       embedding:
         model: ${EMBEDDING_MODEL:nomic-embed-text}
       chat:
-        model: ${LLM_MODEL:tinyllama}
+        model: ${LLM_MODEL:gemma2:2b}
         options:
           num-predict: 512
 
@@ -136,3 +136,11 @@ repository:
     - __pycache__
     - .gradle
     - .mvn
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics
+  endpoint:
+    health:
+      show-details: always

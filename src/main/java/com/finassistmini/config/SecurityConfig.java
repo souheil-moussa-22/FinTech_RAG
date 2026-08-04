@@ -32,9 +32,11 @@ public class SecurityConfig {
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers("/swagger-ui/**", "/v3/api-docs/**").permitAll()
                         .requestMatchers("/chat", "/chat/stream").hasAnyRole("ADMIN", "USER")
-                        .requestMatchers("/documents/**").hasRole("ADMIN")
-                        .requestMatchers("/repositories/**").hasRole("ADMIN")
+                        .requestMatchers("/documents/**").hasAnyRole("ADMIN","USER")
+                        .requestMatchers("/repositories/**").hasAnyRole("ADMIN","USER")
                         .requestMatchers("/users/**").hasRole("ADMIN")
+                        .requestMatchers("/conversations/**").hasAnyRole("ADMIN", "USER")
+                        .requestMatchers("/actuator/health").permitAll()
                         .anyRequest().authenticated()
                 )
                 .oauth2ResourceServer(oauth2 -> oauth2
@@ -47,7 +49,7 @@ public class SecurityConfig {
     public CorsConfigurationSource corsConfigurationSource() {
         var config = new CorsConfiguration();
         config.setAllowedOrigins(List.of("http://localhost:3000"));
-        config.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE", "OPTIONS"));
+        config.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
         config.setAllowedHeaders(List.of("*"));
         config.setAllowCredentials(true);
 
