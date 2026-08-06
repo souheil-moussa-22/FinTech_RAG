@@ -36,7 +36,6 @@ public class SecurityConfig {
                         .requestMatchers("/repositories/**").hasAnyRole("ADMIN","USER")
                         .requestMatchers("/users/**").hasRole("ADMIN")
                         .requestMatchers("/conversations/**").hasAnyRole("ADMIN", "USER")
-                        .requestMatchers("/actuator/health").permitAll()
                         .anyRequest().authenticated()
                 )
                 .oauth2ResourceServer(oauth2 -> oauth2

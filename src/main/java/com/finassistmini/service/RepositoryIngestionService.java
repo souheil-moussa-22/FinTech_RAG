@@ -149,10 +149,9 @@ public class RepositoryIngestionService {
                     "Repository is not fully indexed yet. Current status: " + repo.getStatus());
         }
 
-        boolean cached = repo.getSummary() != null && !repo.getSummary().isBlank();
+        boolean cached = summaryService.hasUsableCachedSummary(repo);
         String summary = summaryService.getSummary(repo);
         String fileTree = summaryService.getRepositoryFileTree(repo.getId());
-
         return new RepositorySummaryResponse(id, repo.getName(), summary, fileTree, cached);
     }
 
