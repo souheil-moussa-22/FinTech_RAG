@@ -2,35 +2,13 @@ server:
   port: ${SERVER_PORT:8080}
 
 spring:
+  profiles:
+    default: local
   application:
     name: ${APP_NAME:finassist-mini}
 
-  datasource:
-    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/fintech_rag}
-    username: ${SPRING_DATASOURCE_USERNAME:postgres}
-    password: ${SPRING_DATASOURCE_PASSWORD:postgres}
-    driver-class-name: org.postgresql.Driver
-
-  jpa:
-    hibernate:
-      ddl-auto: validate
-    properties:
-      hibernate:
-        dialect: org.hibernate.dialect.PostgreSQLDialect
-        jdbc:
-          batch_size: 20
-        order_inserts: true
-        order_updates: true
-
-  security:
-    oauth2:
-      resourceserver:
-        jwt:
-          issuer-uri: http://localhost:8180/realms/finassist
-
   ai:
     ollama:
-      base-url: ${OLLAMA_URL:http://localhost:11434}
       embedding:
         model: ${EMBEDDING_MODEL:nomic-embed-text}
       chat:
@@ -67,13 +45,6 @@ app:
   chat-max-concurrency: ${CHAT_MAX_CONCURRENCY:1}
   admission-wait-seconds: ${ADMISSION_WAIT_SECONDS:1.0}
 
-keycloak:
-  admin:
-    server-url: ${KEYCLOAK_SERVER_URL:http://localhost:8180}
-    realm: ${KEYCLOAK_REALM:finassist}
-    client-id: ${KEYCLOAK_ADMIN_CLIENT_ID:finassist-admin}
-    client-secret: ${KEYCLOAK_ADMIN_CLIENT_SECRET:5ra1xDe32xlCltOTwIdnUVaqoeK1dpmP}
-
 springdoc:
   api-docs:
     path: /v3/api-docs
@@ -89,7 +60,7 @@ logging:
     com.finassistmini: DEBUG
 
 repository:
-  storage-path: storage/repositories
+  storage-path: ${REPOSITORY_STORAGE_PATH:storage/repositories}
   max-file-size-bytes: 1048576       # 1 MB
   max-files-per-repo: 2000
   max-depth: 20
@@ -136,3 +107,12 @@ repository:
     - __pycache__
     - .gradle
     - .mvn
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      show-details: never
