@@ -25,7 +25,7 @@ export const chatService = {
       return
     }
 
-    const baseUrl = '/api'
+    const baseUrl = import.meta.env.VITE_API_BASE_URL || '/api'
 
     let response: Response
     try {
