@@ -175,7 +175,7 @@ Data is retained across container restarts.
 
 - **Backend unhealthy**: verify PostgreSQL/Keycloak are reachable as `postgres` and `keycloak` on the shared network.
 - **Frontend cannot call API**: verify backend health and Nginx proxy route `/api`.
-- **Keycloak login fails**: verify `VITE_KEYCLOAK_URL`, `KEYCLOAK_ISSUER_URI`, and realm/client values.
+- **Keycloak login fails**: verify `VITE_KEYCLOAK_URL`, `KEYCLOAK_ISSUER_URI`, `KEYCLOAK_JWK_SET_URI`, and realm/client values.
 - **Ollama unavailable**: verify `OLLAMA_URL=http://ollama:11434` and Ollama container health.
 - **Network DNS issues**: inspect network membership:
   ```bash

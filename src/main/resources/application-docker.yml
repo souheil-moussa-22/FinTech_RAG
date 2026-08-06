@@ -18,7 +18,8 @@ spring:
     oauth2:
       resourceserver:
         jwt:
-          issuer-uri: ${KEYCLOAK_ISSUER_URI:http://keycloak:8080/realms/finassist}
+          issuer-uri: ${KEYCLOAK_ISSUER_URI:http://localhost:8180/realms/finassist}
+          jwk-set-uri: ${KEYCLOAK_JWK_SET_URI:http://keycloak:8080/realms/finassist/protocol/openid-connect/certs}
   ai:
     ollama:
       base-url: ${OLLAMA_URL:http://ollama:11434}

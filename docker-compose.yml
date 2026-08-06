@@ -10,7 +10,8 @@ services:
       SPRING_PROFILES_ACTIVE: docker
       SPRING_DATASOURCE_URL: ${SPRING_DATASOURCE_URL:-jdbc:postgresql://postgres:5432/fintech_rag}
       KEYCLOAK_SERVER_URL: ${KEYCLOAK_SERVER_URL:-http://keycloak:8080}
-      KEYCLOAK_ISSUER_URI: ${KEYCLOAK_ISSUER_URI:-http://keycloak:8080/realms/finassist}
+      KEYCLOAK_ISSUER_URI: ${KEYCLOAK_ISSUER_URI:-http://localhost:8180/realms/finassist}
+      KEYCLOAK_JWK_SET_URI: ${KEYCLOAK_JWK_SET_URI:-http://keycloak:8080/realms/finassist/protocol/openid-connect/certs}
       OLLAMA_URL: ${OLLAMA_URL:-http://ollama:11434}
       DOCS_DIRECTORY: ${DOCS_DIRECTORY:-/app/data/documents}
       REPOSITORY_STORAGE_PATH: ${REPOSITORY_STORAGE_PATH:-/app/storage/repositories}
