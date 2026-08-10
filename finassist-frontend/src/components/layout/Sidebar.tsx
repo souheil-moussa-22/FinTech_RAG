@@ -30,7 +30,7 @@ export default function Sidebar() {
 
     const handleConversationSelect = (id: string) => {
         setActiveId(id)
-        navigate('/')
+        navigate(`/conversations/${id}`)
     }
 
     return (
